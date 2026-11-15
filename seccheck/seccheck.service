@@ -1,0 +1,16 @@
+[Unit]
+Description=gVisor SecCheck Receiver
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStartPost=/root/seccheck/reconnect.sh
+ExecStart=/usr/bin/python3 /root/seccheck/receiver.py
+Restart=always
+RestartSec=3
+RuntimeDirectory=seccheck
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=no
+
+[Install]
+WantedBy=multi-user.target

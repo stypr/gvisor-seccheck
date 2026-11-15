@@ -1,0 +1,33 @@
+{
+  "trace_session": {
+    "name": "Default",
+    "points": [
+      {
+        "name": "syscall/execve/enter",
+        "context_fields": [
+          "container_id",
+          "group_id",
+          "process_name",
+          "is_exec_session"
+        ]
+      },
+      {
+        "name": "syscall/execveat/enter",
+        "context_fields": [
+          "container_id",
+          "group_id",
+          "process_name",
+          "is_exec_session"
+        ]
+      }
+    ],
+    "sinks": [
+      {
+        "name": "remote",
+        "config": {
+          "endpoint": "/run/seccheck/events.sock"
+        }
+      }
+    ]
+  }
+}

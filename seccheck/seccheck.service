@@ -1,16 +1,19 @@
 [Unit]
 Description=gVisor SecCheck Receiver
-After=local-fs.target
+Documentation=https://github.com/stypr/gvisor-seccheck
+After=local-fs.target docker.service
+Wants=docker.service
 
 [Service]
 Type=simple
-ExecStartPost=/root/seccheck/reconnect.sh
 ExecStart=/usr/bin/python3 /root/seccheck/receiver.py
+ExecStartPost=/root/seccheck/reconnect.sh
 Restart=always
 RestartSec=3
 RuntimeDirectory=seccheck
 RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=no
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

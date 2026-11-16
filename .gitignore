@@ -1,0 +1,2 @@
+# Runtime secret. Keep .env.example tracked instead.
+seccheck/.env

@@ -108,7 +108,6 @@ def discord_alert(container, path, argv):
 
     argv = repr(argv)[:256]
     def send():
-        # argv not written to prevent any env/secret leaks, just in case :p
         data = json.dumps({
             "username": "SecCheck",
             "content": (

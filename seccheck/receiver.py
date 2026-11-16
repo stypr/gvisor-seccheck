@@ -30,8 +30,20 @@ DANGEROUS_COMMANDS = [
     "mount", "chsh", "gpasswd"
 ]
 
-# Tiny descriptors: protobuf runtime safely ignores fields we do not need,
-# including argv and every secret-bearing optional field.
+# Allowlist safe commands here
+SAFE_ARGV = [
+    # cronjob
+    ['/bin/sh', '-c', 'cd / && run-parts --report /etc/cron.hourly'],
+    ['/bin/sh', '-c', 'cd / && run-parts --report /etc/cron.daily'],
+    ['/bin/sh', '-c', 'cd / && run-parts --report /etc/cron.weekly'],
+    ['/bin/sh', '-c', 'cd / && run-parts --report /etc/cron.monthly'],
+    ['run-parts', '--report', '/etc/cron.hourly'],
+    ['run-parts', '--report', '/etc/cron.daily'],
+    ['run-parts', '--report', '/etc/cron.weekly'],
+    ['run-parts', '--report', '/etc/cron.monthly'],
+]
+
+# Tiny descriptors: protobuf runtime safely ignores fields we do not need
 f = d.FileDescriptorProto(name="seccheck_min.proto", package="sc", syntax="proto3")
 def msg(name):
     m = f.message_type.add(); m.name = name; return m
@@ -84,7 +96,7 @@ Handshake, ExecInfo, ExecCall = (cls(n) for n in ("Handshake", "ExecInfo", "Exec
 last_alert = 0
 alert_lock = threading.Lock()
 
-def discord_alert(container, path):
+def discord_alert(container, path, argv):
     global last_alert
 
     # only alert once in every 30s if there are multiples
@@ -94,15 +106,17 @@ def discord_alert(container, path):
             return
         last_alert = now
 
+    argv = repr(argv)[:256]
     def send():
         # argv not written to prevent any env/secret leaks, just in case :p
         data = json.dumps({
             "username": "SecCheck",
             "content": (
-                f"🚨 **gVisor Exec Alert**\n"
+                f"🚨 **gVisor Execution Alert**\n"
                 f"**Host:** {socket.gethostname()}\n"
                 f"**Container:** {container[:12]}\n"
-                f"**Executable:** {path[:256]}"
+                f"**Executable:** {path[:256]}\n"
+                f"**Argv:** {argv}"
             ),
             "allowed_mentions": {"parse": []}
         }).encode()
@@ -160,7 +174,6 @@ def handle(c):
                 argv = [arg[:256] for arg in e.argv[:16]]
                 truncated = len(e.argv) > 16 or any(len(arg) > 256 for arg in e.argv)
 
-                # log everything by default...
                 print(
                     f"{name} container={ctx.container_id[:64]} "
                     f"pid={ctx.pid} "
@@ -172,13 +185,17 @@ def handle(c):
                     flush=True
                 )
 
-                # alert for crazy stuff
+                # log everything by default...
+                if argv in SAFE_ARGV:
+                    continue
+
+                # alert for dangerous commands
                 if (
                     name == "EXEC_ATTEMPT"
                     and not ctx.is_exec_session
-                    and os.path.basename(path) in DANGEROUS_COMMANDS:
+                    and os.path.basename(path) in DANGEROUS_COMMANDS
                 ):
-                    discord_alert(ctx.container_id, path)
+                    discord_alert(ctx.container_id, path, argv)
         except Exception as exc:
             print(f"receiver: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
 
@@ -207,4 +224,4 @@ def main():
             os.unlink(SOCK)
 
 if __name__ == "__main__":
-    main()
+    main(

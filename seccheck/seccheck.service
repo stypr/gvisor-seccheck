@@ -6,6 +6,7 @@ Wants=docker.service
 
 [Service]
 Type=simple
+EnvironmentFile=-/root/seccheck/.env
 ExecStart=/usr/bin/python3 /root/seccheck/receiver.py
 ExecStartPost=/root/seccheck/reconnect.sh
 Restart=always

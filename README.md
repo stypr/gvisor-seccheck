@@ -1,6 +1,8 @@
 # gVisor SecCheck alerts
 
-A small, dependency-light listener that turns selected [gVisor runtime-monitoring](https://gvisor.dev/docs/user_guide/runtimemonitor/) events into Discord alerts.
+A small, dependency-light listener that turns selected
+[gVisor runtime-monitoring](https://gvisor.dev/docs/user_guide/runtimemonitor/)
+events into Discord alerts.
 
 It listens on a root-only Unix socket, logs execution events to the systemd
 journal, and alerts when a container workload attempts to run a command such as
@@ -20,7 +22,7 @@ gVisor container
     -> /run/seccheck/events.sock
     -> receiver.py
        |-> systemd journal (all supported execution events)
-       `-> Discord (selected execution attempts, rate-limited)
+       `-> Discord embed (selected execution attempts, rate-limited)
 ```
 
 The receiver uses the official version 1 wire format and defines only the
@@ -31,7 +33,7 @@ protobuf fields it needs. Unknown fields are ignored by the protobuf runtime.
 - Linux with systemd
 - Docker with a working gVisor (`runsc`) installation
 - Python 3
-- Python's `protobuf` package or Debian's `python3-protobuf` package
+- Debian's `python3-protobuf` and `python3-dotenv` packages
 - A Discord webhook URL
 
 The included service and paths target Debian 13 and a root-owned installation
@@ -43,7 +45,7 @@ at `/root/seccheck`.
 
    ```sh
    sudo apt-get update
-   sudo apt-get install -y python3-protobuf
+   sudo apt-get install -y python3-protobuf python3-dotenv
    ```
 
 2. Install the listener files:
@@ -52,21 +54,18 @@ at `/root/seccheck`.
    sudo install -d -m 0700 /root/seccheck
    sudo install -m 0755 seccheck/receiver.py seccheck/reconnect.sh /root/seccheck/
    sudo install -m 0644 seccheck/session.json /root/seccheck/session.json
+   sudo install -m 0600 seccheck/.env.example /root/seccheck/.env
    sudo install -m 0644 seccheck/seccheck.service /etc/systemd/system/seccheck.service
    ```
 
-3. Store the Discord webhook in a root-only `.env` file. The real `.env` is
-   ignored by Git; [`seccheck/.env.example`](seccheck/.env.example) documents
-   the expected variable:
+3. Open `/root/seccheck/.env` and replace the webhook placeholder:
 
    ```sh
-   read -rsp "Discord webhook URL: " webhook_url
-   printf 'DISCORD_WEBHOOK_URL=%s\n' "$webhook_url" \
-     | sudo tee /root/seccheck/.env >/dev/null
-   unset webhook_url
-   printf '\n'
-   sudo chmod 0600 /root/seccheck/.env
+   sudoedit /root/seccheck/.env
    ```
+
+   The file contains all settings, including `DISCORD_WEBHOOK_URL`. It is mode
+   `0600` and ignored by Git.
 
 4. Install a dedicated gVisor runtime that loads the SecCheck session:
 
@@ -135,24 +134,27 @@ docker rm -f seccheck-test
 
 ## Configuration
 
-The main tuning knobs are near the top of `receiver.py`:
+Structured alert policy remains near the top of `receiver.py`:
 
 - `DANGEROUS_COMMANDS` controls executable basenames that can trigger alerts.
 - `SAFE_ARGV` suppresses alerts for exact, known-safe argument vectors while
   retaining their journal entries.
-- `ALERT_COOLDOWN_SECONDS` limits Discord noise globally. Additional matching
-  events are still logged during the cooldown.
 
-Two environment variables override runtime paths when launching the receiver
-manually:
+All runtime settings live together in `/root/seccheck/.env`. `python-dotenv`
+loads the same file when running the receiver directly, while systemd loads it
+for the service and reconnect helper:
 
-| Variable | Default |
-| --- | --- |
-| `SECCHECK_SOCKET` | `/run/seccheck/events.sock` |
-| `SECCHECK_ENV_FILE` | `/root/seccheck/.env` |
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `DISCORD_WEBHOOK_URL` | required | Discord destination and authentication |
+| `SECCHECK_SOCKET` | `/run/seccheck/events.sock` | Listener socket path |
+| `SECCHECK_ALERT_COOLDOWN` | `30` | Global Discord cooldown in seconds |
+| `SECCHECK_DISCORD_USERNAME` | `gVisor SecCheck` | Webhook display name |
+| `RUNSC_ROOT` | `/var/run/docker/runtime-runc/moby` | gVisor state root |
+| `SECCHECK_CONFIG` | `/root/seccheck/session.json` | Trace configuration |
 
-`reconnect.sh` also accepts `RUNSC_ROOT`, `SECCHECK_CONFIG`, and
-`SECCHECK_SOCKET`. The systemd service uses the documented defaults.
+Set `SECCHECK_ENV_FILE` before launching manually to load a different `.env`
+path. Existing process environment variables take precedence over file values.
 
 Useful operations:
 
@@ -166,13 +168,14 @@ sudo systemctl stop seccheck.service
 
 - The socket directory is mode `0700`, the socket is mode `0600`, and no TCP
   listener is exposed.
-- The receiver refuses to start when `.env` is group- or world-accessible and
-  accepts only HTTPS webhook URLs on Discord's webhook endpoint.
+- The `.env` file contains the webhook secret and is installed with mode `0600`.
+  Do not commit or share it.
+- Only HTTPS URLs on Discord's webhook endpoint are accepted.
 - Event data is untrusted. Logged paths and arguments are length-limited, but
   they may still contain sensitive values; avoid enabling SecCheck fields such
   as environment variables unless you have a secure logging policy.
-- Discord receives the executable path and a truncated argument vector for an
-  alert. Do not use this unchanged if command arguments may contain secrets.
+- Discord receives a bounded embed containing the executable path and truncated
+  argument vector. Do not keep this if arguments may contain secrets.
 - Alerts are best-effort and globally rate-limited. There is no queue,
   persistence, retry policy, or complete loss detection.
 - Command matching is a basename heuristic, not an enforcement boundary. A
